@@ -69,6 +69,22 @@ const taskSchema = new mongoose.Schema({
   actualDuration: {
     type: Number // in minutes
   },
+  timeBlockId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Schedule',
+    default: null
+  },
+  isFlexible: {
+    type: Boolean,
+    default: true // can be rescheduled if conflicts arise
+  },
+  minDaysBeforeDue: {
+    type: Number,
+    default: 1 // must schedule at least X days before due date
+  },
+  excludeDates: [{
+    type: Date
+  }],
   subtasks: [subtaskSchema],
   isAIGenerated: {
     type: Boolean,

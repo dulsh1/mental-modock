@@ -13,6 +13,10 @@ const mentalHealthRoutes = require('./routes/mentalHealth.routes');
 const taskRoutes = require('./routes/task.routes');
 const wellnessRoutes = require('./routes/wellness.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const gpaRoutes = require('./routes/gpaRoutes');
+const scheduleRoutes = require('./routes/schedule.routes');
+const timetableRoutes = require('./routes/timetable.routes');
+const exportRoutes = require('./routes/export.routes');
 
 // Import services
 const { runDailyPredictions } = require('./services/ml/predictionService');
@@ -21,7 +25,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: process.env.CLIENT_URL,
   credentials: true
 }));
 app.use(express.json());
@@ -36,6 +40,10 @@ app.use('/api/mental-health', mentalHealthRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/wellness', wellnessRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/gpa', gpaRoutes);
+app.use('/api/schedules', scheduleRoutes);
+app.use('/api/templates', timetableRoutes);
+app.use('/api/export', exportRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -63,10 +71,15 @@ app.use((req, res) => {
 // Database connection
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/mental-modock');
-    console.log('✅ MongoDB connected successfully');
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MongoDB connection string is missing in .env');
+    }
+
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+
+    console.log(`✅ MongoDB connected successfully: ${conn.connection.host}`);
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error.message);
+    console.error(`❌ MongoDB connection error: ${error.message}`);
     process.exit(1);
   }
 };
@@ -81,9 +94,19 @@ cron.schedule('0 6 * * *', async () => {
 const PORT = process.env.PORT || 5000;
 
 connectDB().then(() => {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use. Stop the existing process or change PORT in .env.`);
+      process.exit(1);
+    }
+
+    console.error('❌ Server startup error:', error.message);
+    process.exit(1);
   });
 });
 

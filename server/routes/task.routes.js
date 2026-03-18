@@ -30,7 +30,7 @@ const taskValidation = [
     .withMessage('Invalid priority'),
   body('category')
     .optional()
-    .isIn(['work', 'personal', 'academic', 'health', 'finance', 'social', 'other'])
+    .isIn(['work', 'personal', 'academic', 'health', 'finance', 'social', 'other', 'general', 'learning'])
     .withMessage('Invalid category')
 ];
 

@@ -3,6 +3,16 @@ const User = require('../models/User');
 const { breakdownTask } = require('../services/ai/taskBreakdownService');
 const { scheduleTasksOptimally } = require('../services/ai/schedulingService');
 
+const normalizeTaskPayload = (payload = {}) => {
+  const normalized = { ...payload };
+
+  if (normalized.category === 'general') normalized.category = 'other';
+  if (normalized.category === 'learning') normalized.category = 'academic';
+  if (normalized.status === 'in-progress') normalized.status = 'in_progress';
+
+  return normalized;
+};
+
 // @desc    Get all tasks
 // @route   GET /api/tasks
 // @access  Private
@@ -78,7 +88,7 @@ exports.getTask = async (req, res) => {
 exports.createTask = async (req, res) => {
   try {
     const taskData = {
-      ...req.body,
+      ...normalizeTaskPayload(req.body),
       user: req.user.id
     };
 
@@ -101,6 +111,8 @@ exports.createTask = async (req, res) => {
 // @access  Private
 exports.updateTask = async (req, res) => {
   try {
+    req.body = normalizeTaskPayload(req.body);
+
     let task = await Task.findOne({
       _id: req.params.id,
       user: req.user.id
