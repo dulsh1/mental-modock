@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -7,14 +8,17 @@ import TaskCard from '../components/tasks/TaskCard';
 import TaskForm from '../components/tasks/TaskForm';
 import AITaskBreakdown from '../components/tasks/AITaskBreakdown';
 import { taskService } from '../services/services';
-import { PlusIcon, SparklesIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, FunnelIcon, CalendarIcon } from '@heroicons/react/24/outline';
 
 const Tasks = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showAIBreakdown, setShowAIBreakdown] = useState(false);
+  const [breakdownTask, setBreakdownTask] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
+  const [expandedTasks, setExpandedTasks] = useState({});
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('dueDate');
 
@@ -112,20 +116,180 @@ const Tasks = () => {
     await handleUpdateTask(task._id, { status: newStatus });
   };
 
-  const handleAIBreakdown = (subtasks) => {
-    // Add subtasks as new tasks
-    const newTasks = subtasks.map((st, index) => ({
-      _id: `ai-${Date.now()}-${index}`,
+  const handleAIBreakdown = async (payload) => {
+    const subtasks = Array.isArray(payload) ? payload : payload?.subtasks;
+    const sourceTask = Array.isArray(payload) ? null : payload?.sourceTask;
+
+    if (!subtasks?.length) {
+      toast.error('No subtasks selected');
+      return;
+    }
+
+    // If breakdown was launched from a task card, append as subtasks to that parent task.
+    if (breakdownTask?._id) {
+      const parentTask = tasks.find(t => t._id === breakdownTask._id);
+      if (!parentTask) {
+        toast.error('Parent task not found');
+        return;
+      }
+
+      const existingSubtasks = parentTask.subtasks || [];
+      const mappedSubtasks = subtasks.map((st, index) => ({
+        title: st.title,
+        estimatedTime: st.estimatedTime || st.estimatedMinutes || 30,
+        completed: false,
+        order: existingSubtasks.length + index
+      }));
+      const updatedSubtasks = [...existingSubtasks, ...mappedSubtasks];
+
+      try {
+        const response = await taskService.updateTask(parentTask._id, {
+          subtasks: updatedSubtasks
+        });
+
+        const updatedTask = response?.data?.data || { ...parentTask, subtasks: updatedSubtasks };
+        setTasks(prev => prev.map(t => (t._id === parentTask._id ? updatedTask : t)));
+        setExpandedTasks(prev => ({ ...prev, [parentTask._id]: true }));
+        toast.success(`Added ${mappedSubtasks.length} subtasks to "${parentTask.title}"`);
+      } catch (error) {
+        // Keep local UX responsive even if API update fails in demo mode.
+        setTasks(prev => prev.map(t => (
+          t._id === parentTask._id ? { ...t, subtasks: updatedSubtasks } : t
+        )));
+        setExpandedTasks(prev => ({ ...prev, [parentTask._id]: true }));
+        toast.error('Failed to save subtasks to server. Applied locally.');
+      }
+
+      setBreakdownTask(null);
+      setShowAIBreakdown(false);
+      return;
+    }
+
+    // Standalone mode: create one parent task with generated children.
+    const parentTitle = sourceTask?.title?.trim() || 'AI Planned Task';
+    const parentDescription = sourceTask?.description?.trim() || 'Task created from AI breakdown';
+    const mappedSubtasks = subtasks.map((st, index) => ({
       title: st.title,
-      description: st.tips || '',
-      priority: 'medium',
-      status: 'pending',
-      estimatedDuration: st.estimatedMinutes,
-      tags: ['ai-generated'],
+      estimatedTime: st.estimatedTime || st.estimatedMinutes || 30,
+      completed: false,
+      order: index
     }));
-    setTasks([...newTasks, ...tasks]);
-    toast.success(`Added ${subtasks.length} subtasks!`);
+
+    const createPayload = {
+      title: parentTitle,
+      description: parentDescription,
+      priority: 'medium',
+      category: 'other',
+      status: 'pending',
+      estimatedDuration: mappedSubtasks.reduce((sum, st) => sum + st.estimatedTime, 0),
+      tags: ['ai-generated'],
+      subtasks: mappedSubtasks,
+      isAIGenerated: true
+    };
+
+    try {
+      const response = await taskService.createTask(createPayload);
+      const createdTask = response?.data?.data;
+      if (createdTask) {
+        setTasks(prev => [createdTask, ...prev]);
+        setExpandedTasks(prev => ({ ...prev, [createdTask._id]: true }));
+      }
+      toast.success(`Created parent task with ${mappedSubtasks.length} subtasks`);
+    } catch (error) {
+      const localTaskId = `ai-parent-${Date.now()}`;
+      setTasks(prev => [{
+        _id: localTaskId,
+        ...createPayload
+      }, ...prev]);
+      setExpandedTasks(prev => ({ ...prev, [localTaskId]: true }));
+      toast.error('Saved AI task locally. Backend save failed.');
+    }
+
+    setBreakdownTask(null);
     setShowAIBreakdown(false);
+  };
+
+  const handleOpenAIBreakdown = (task = null) => {
+    setBreakdownTask(task);
+    setShowAIBreakdown(true);
+  };
+
+  const handleToggleExpand = (taskId) => {
+    setExpandedTasks(prev => ({
+      ...prev,
+      [taskId]: !prev[taskId]
+    }));
+  };
+
+  const handleSubtaskToggle = async (taskId, subtask, index, completed) => {
+    const targetTask = tasks.find(t => t._id === taskId);
+    if (!targetTask) return;
+
+    const updatedSubtasks = [...(targetTask.subtasks || [])];
+    updatedSubtasks[index] = {
+      ...updatedSubtasks[index],
+      completed,
+      completedAt: completed ? new Date().toISOString() : null
+    };
+
+    setTasks(prev => prev.map(t => (
+      t._id === taskId ? { ...t, subtasks: updatedSubtasks } : t
+    )));
+
+    try {
+      if (subtask?._id) {
+        await taskService.updateSubtask(taskId, subtask._id, { completed });
+      } else {
+        await taskService.updateTask(taskId, { subtasks: updatedSubtasks });
+      }
+    } catch (error) {
+      toast.error('Failed to update subtask');
+    }
+  };
+
+  const handleSubtaskEdit = async (taskId, subtask, index, updates) => {
+    const targetTask = tasks.find(t => t._id === taskId);
+    if (!targetTask) return;
+
+    const updatedSubtasks = [...(targetTask.subtasks || [])];
+    updatedSubtasks[index] = {
+      ...updatedSubtasks[index],
+      ...updates
+    };
+
+    setTasks(prev => prev.map(t => (
+      t._id === taskId ? { ...t, subtasks: updatedSubtasks } : t
+    )));
+
+    try {
+      if (subtask?._id) {
+        await taskService.updateSubtask(taskId, subtask._id, updates);
+      } else {
+        await taskService.updateTask(taskId, { subtasks: updatedSubtasks });
+      }
+    } catch (error) {
+      toast.error('Failed to save subtask edits');
+    }
+  };
+
+  const handleSubtaskDelete = async (taskId, index) => {
+    const targetTask = tasks.find(t => t._id === taskId);
+    if (!targetTask) return;
+
+    const updatedSubtasks = (targetTask.subtasks || [])
+      .filter((_, i) => i !== index)
+      .map((st, order) => ({ ...st, order }));
+
+    setTasks(prev => prev.map(t => (
+      t._id === taskId ? { ...t, subtasks: updatedSubtasks } : t
+    )));
+
+    try {
+      await taskService.updateTask(taskId, { subtasks: updatedSubtasks });
+      toast.success('Subtask deleted');
+    } catch (error) {
+      toast.error('Failed to delete subtask');
+    }
   };
 
   const filteredTasks = tasks
@@ -175,11 +339,11 @@ const Tasks = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowAIBreakdown(true)}
+            onClick={() => navigate('/schedule')}
             className="btn-secondary flex items-center gap-2"
           >
-            <SparklesIcon className="w-5 h-5" />
-            AI Breakdown
+            <CalendarIcon className="w-5 h-5" />
+            Schedule & Optimize
           </button>
           <button
             onClick={() => setShowTaskForm(true)}
@@ -266,9 +430,15 @@ const Tasks = () => {
               >
                 <TaskCard
                   task={task}
-                  onToggleComplete={() => handleToggleComplete(task)}
+                  onStatusChange={(taskId, status) => handleUpdateTask(taskId, { status })}
                   onEdit={() => setEditingTask(task)}
-                  onDelete={() => handleDeleteTask(task._id)}
+                  onDelete={handleDeleteTask}
+                  onBreakdown={handleOpenAIBreakdown}
+                  isExpanded={!!expandedTasks[task._id]}
+                  onToggleExpand={handleToggleExpand}
+                  onSubtaskToggle={handleSubtaskToggle}
+                  onSubtaskEdit={handleSubtaskEdit}
+                  onSubtaskDelete={handleSubtaskDelete}
                 />
               </motion.div>
             ))
@@ -284,7 +454,7 @@ const Tasks = () => {
             ? (data) => handleUpdateTask(editingTask._id, data)
             : handleCreateTask
           }
-          onClose={() => {
+          onCancel={() => {
             setShowTaskForm(false);
             setEditingTask(null);
           }}
@@ -294,8 +464,12 @@ const Tasks = () => {
       {/* AI Breakdown Modal */}
       {showAIBreakdown && (
         <AITaskBreakdown
+          task={breakdownTask}
           onBreakdown={handleAIBreakdown}
-          onClose={() => setShowAIBreakdown(false)}
+          onClose={() => {
+            setShowAIBreakdown(false);
+            setBreakdownTask(null);
+          }}
         />
       )}
     </div>

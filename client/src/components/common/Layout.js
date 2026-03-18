@@ -7,13 +7,15 @@ import {
   PencilSquareIcon,
   ChartBarIcon,
   ClipboardDocumentListIcon,
+  CalendarIcon,
   HeartIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
   SunIcon,
-  MoonIcon
+  MoonIcon,
+  CalculatorIcon
 } from '@heroicons/react/24/outline';
 
 const Layout = () => {
@@ -27,6 +29,8 @@ const Layout = () => {
     { name: 'Daily Log', href: '/log', icon: PencilSquareIcon },
     { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
     { name: 'Tasks', href: '/tasks', icon: ClipboardDocumentListIcon },
+    { name: 'Schedule', href: '/schedule', icon: CalendarIcon },
+    { name: 'GPA Calculator', href: '/gpa', icon: CalculatorIcon },
     { name: 'Wellness', href: '/wellness', icon: HeartIcon },
     { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
   ];

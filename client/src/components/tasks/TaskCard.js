@@ -26,7 +26,10 @@ const TaskCard = ({
   onDelete, 
   onBreakdown,
   isExpanded,
-  onToggleExpand 
+  onToggleExpand,
+  onSubtaskToggle,
+  onSubtaskEdit,
+  onSubtaskDelete
 }) => {
   const {
     _id,
@@ -53,7 +56,7 @@ const TaskCard = ({
         <div className="flex items-start gap-3 flex-1">
           {/* Status checkbox */}
           <button
-            onClick={() => onStatusChange(_id, status === 'completed' ? 'pending' : 'completed')}
+            onClick={() => onStatusChange?.(_id, status === 'completed' ? 'pending' : 'completed')}
             className={`
               mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
               ${status === 'completed' 
@@ -133,7 +136,7 @@ const TaskCard = ({
         <div className="flex items-center gap-1">
           {subtasks.length === 0 && (
             <button
-              onClick={() => onBreakdown(task)}
+              onClick={() => onBreakdown?.(task)}
               className="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg transition-colors"
               title="AI Breakdown"
             >
@@ -143,7 +146,7 @@ const TaskCard = ({
             </button>
           )}
           <button
-            onClick={() => onEdit(task)}
+            onClick={() => onEdit?.(task)}
             className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,7 +154,7 @@ const TaskCard = ({
             </svg>
           </button>
           <button
-            onClick={() => onDelete(_id)}
+            onClick={() => onDelete?.(_id)}
             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,12 +171,23 @@ const TaskCard = ({
             <span className="text-xs text-gray-500 dark:text-gray-400">
               Subtasks: {completedSubtasks}/{subtasks.length}
             </span>
-            <button
-              onClick={() => onToggleExpand(_id)}
-              className="text-xs text-primary-500 hover:text-primary-600"
-            >
-              {isExpanded ? 'Hide' : 'Show'} subtasks
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onToggleExpand?.(_id)}
+                className="text-xs text-primary-500 hover:text-primary-600"
+              >
+                {isExpanded ? 'Hide' : 'Show'} subtasks
+              </button>
+              <button
+                onClick={() => {
+                  if (!isExpanded) onToggleExpand?.(_id);
+                }}
+                className="text-xs text-blue-500 hover:text-blue-600"
+                title="Edit subtasks"
+              >
+                Edit subtasks
+              </button>
+            </div>
           </div>
           
           {/* Progress bar */}
@@ -188,16 +202,45 @@ const TaskCard = ({
           {isExpanded && (
             <div className="mt-3 space-y-2 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
               {subtasks.map((subtask, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={subtask._id || index} className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={subtask.completed}
-                    onChange={() => {/* Handle subtask toggle */}}
+                    onChange={(e) => onSubtaskToggle?.(_id, subtask, index, e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
                   />
-                  <span className={`text-sm ${subtask.completed ? 'line-through text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}>
-                    {subtask.title}
-                  </span>
+                  <input
+                    type="text"
+                    defaultValue={subtask.title}
+                    onBlur={(e) => {
+                      const nextTitle = e.target.value.trim();
+                      if (nextTitle && nextTitle !== subtask.title) {
+                        onSubtaskEdit?.(_id, subtask, index, { title: nextTitle });
+                      }
+                    }}
+                    className={`flex-1 text-sm px-2 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 ${subtask.completed ? 'line-through text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    defaultValue={subtask.estimatedTime || 0}
+                    onBlur={(e) => {
+                      const minutes = Number(e.target.value);
+                      if (!Number.isNaN(minutes) && minutes >= 0 && minutes !== subtask.estimatedTime) {
+                        onSubtaskEdit?.(_id, subtask, index, { estimatedTime: minutes });
+                      }
+                    }}
+                    className="w-20 text-sm px-2 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                  />
+                  <button
+                    onClick={() => onSubtaskDelete?.(_id, index)}
+                    className="p-1 text-gray-400 hover:text-red-500 rounded"
+                    title="Delete subtask"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>

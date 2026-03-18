@@ -9,7 +9,7 @@ const TaskForm = ({ task, onSubmit, onCancel }) => {
     dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
     estimatedTime: task?.estimatedTime || '',
     tags: task?.tags?.join(', ') || '',
-    category: task?.category || 'general',
+    category: task?.category || 'other',
   });
 
   const [errors, setErrors] = useState({});
@@ -40,8 +40,9 @@ const TaskForm = ({ task, onSubmit, onCancel }) => {
       const processedData = {
         ...formData,
         tags: formData.tags.split(',').map(t => t.trim()).filter(t => t),
-        estimatedTime: formData.estimatedTime ? parseInt(formData.estimatedTime) : null,
+        estimatedDuration: formData.estimatedTime ? parseInt(formData.estimatedTime, 10) : null,
       };
+      delete processedData.estimatedTime;
       onSubmit(processedData);
     }
   };
@@ -124,11 +125,13 @@ const TaskForm = ({ task, onSubmit, onCancel }) => {
                          bg-white dark:bg-gray-800 text-gray-800 dark:text-white
                          focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             >
-              <option value="general">General</option>
               <option value="work">Work</option>
               <option value="personal">Personal</option>
+              <option value="academic">Academic</option>
               <option value="health">Health</option>
-              <option value="learning">Learning</option>
+              <option value="finance">Finance</option>
+              <option value="social">Social</option>
+              <option value="other">Other</option>
             </select>
           </div>
         </div>

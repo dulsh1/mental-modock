@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import Card from '../common/Card';
 import LoadingSpinner from '../common/LoadingSpinner';
+import toast from 'react-hot-toast';
+import { taskService } from '../../services/services';
 
 const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => {
   const [subtasks, setSubtasks] = useState([]);
@@ -16,28 +18,63 @@ const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => 
   // Get the current task (either from prop or input)
   const currentTask = task || (taskInput.title ? taskInput : null);
 
-  // Mock AI generation for demo (in real app, this calls the backend)
+  const buildSubtaskState = (items = []) => items.map((st) => ({
+    title: st.title,
+    estimatedTime: st.estimatedTime || st.estimatedMinutes || 30,
+    selected: st.selected ?? true,
+    tips: st.tips || ''
+  }));
+
+  // Generate AI breakdown via backend with fallback mode.
   const generateBreakdown = async () => {
     if (!currentTask?.title) return;
-    
+
     setGenerating(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Mock response based on task title
-    const mockSubtasks = generateMockSubtasks(currentTask.title, currentTask.description);
-    setSubtasks(mockSubtasks);
-    setGeneratedPlan({
-      totalEstimatedTime: mockSubtasks.reduce((sum, st) => sum + st.estimatedTime, 0),
-      complexity: 'Medium',
-      suggestedApproach: 'Break down into smaller chunks and tackle one at a time.',
-    });
-    
-    setGenerating(false);
+
+    try {
+      const prompt = `${currentTask.title}${currentTask.description ? `: ${currentTask.description}` : ''}`;
+      const estimatedHours = task?.estimatedDuration
+        ? Math.max(1, Math.round(task.estimatedDuration / 60))
+        : undefined;
+
+      const response = await taskService.aiBreakdown(prompt, estimatedHours);
+      const breakdown = response?.data?.data || {};
+      const aiSubtasks = buildSubtaskState(breakdown.subtasks || []);
+
+      if (!aiSubtasks.length) {
+        throw new Error('No subtasks generated');
+      }
+
+      setSubtasks(aiSubtasks);
+      setGeneratedPlan({
+        totalEstimatedTime: breakdown.totalEstimatedMinutes || aiSubtasks.reduce((sum, st) => sum + st.estimatedTime, 0),
+        complexity: aiSubtasks.length >= 6 ? 'High' : aiSubtasks.length >= 4 ? 'Medium' : 'Low',
+        suggestedApproach: breakdown.suggestions || 'Review and customize the generated subtasks before applying.'
+      });
+    } catch (error) {
+      const mockSubtasks = buildSubtaskState(generateMockSubtasks(currentTask.title, currentTask.description));
+      setSubtasks(mockSubtasks);
+      setGeneratedPlan({
+        totalEstimatedTime: mockSubtasks.reduce((sum, st) => sum + st.estimatedTime, 0),
+        complexity: 'Medium',
+        suggestedApproach: 'Using offline fallback suggestions. Edit these subtasks as needed before applying.'
+      });
+      toast.error('AI service unavailable, showing fallback suggestions');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const generateMockSubtasks = (title, description) => {
+    const withRandomOrder = (items) => {
+      const copy = [...items];
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
+
     // Simple mock logic - in real app, this comes from AI
     const baseSubtasks = [
       { title: 'Research and gather requirements', estimatedTime: 30, selected: true },
@@ -51,7 +88,7 @@ const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => 
 
     // Customize based on task content
     if (titleLower.includes('report')) {
-      return [
+      return withRandomOrder([
         { title: 'Gather data and sources', estimatedTime: 30, selected: true },
         { title: 'Create report outline', estimatedTime: 15, selected: true },
         { title: 'Write introduction', estimatedTime: 20, selected: true },
@@ -59,31 +96,31 @@ const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => 
         { title: 'Create visualizations/charts', estimatedTime: 25, selected: true },
         { title: 'Write conclusion', estimatedTime: 15, selected: true },
         { title: 'Proofread and format', estimatedTime: 20, selected: true },
-      ];
+      ]);
     }
 
     if (titleLower.includes('meeting') || titleLower.includes('presentation')) {
-      return [
+      return withRandomOrder([
         { title: 'Define meeting objectives', estimatedTime: 10, selected: true },
         { title: 'Create agenda', estimatedTime: 15, selected: true },
         { title: 'Prepare presentation slides', estimatedTime: 40, selected: true },
         { title: 'Gather supporting materials', estimatedTime: 20, selected: true },
         { title: 'Practice/rehearse', estimatedTime: 15, selected: true },
         { title: 'Send meeting invites', estimatedTime: 5, selected: true },
-      ];
+      ]);
     }
 
     if (titleLower.includes('study') || titleLower.includes('learn')) {
-      return [
+      return withRandomOrder([
         { title: 'Review learning objectives', estimatedTime: 10, selected: true },
         { title: 'Read primary materials', estimatedTime: 45, selected: true },
         { title: 'Take notes and summarize', estimatedTime: 25, selected: true },
         { title: 'Practice with exercises', estimatedTime: 30, selected: true },
         { title: 'Self-test and review', estimatedTime: 20, selected: true },
-      ];
+      ]);
     }
 
-    return baseSubtasks;
+    return withRandomOrder(baseSubtasks);
   };
 
   const toggleSubtask = (index) => {
@@ -92,13 +129,47 @@ const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => 
     ));
   };
 
+  const updateSubtaskField = (index, field, value) => {
+    setSubtasks(prev => prev.map((st, i) => {
+      if (i !== index) return st;
+
+      if (field === 'estimatedTime') {
+        const minutes = Number(value);
+        return { ...st, estimatedTime: Number.isNaN(minutes) ? 0 : Math.max(0, minutes) };
+      }
+
+      return { ...st, [field]: value };
+    }));
+  };
+
   const handleApply = () => {
-    const selectedSubtasks = subtasks.filter(st => st.selected);
+    const selectedSubtasks = subtasks
+      .filter(st => st.selected)
+      .map(st => ({
+        ...st,
+        title: st.title.trim(),
+        estimatedTime: Number(st.estimatedTime) || 0
+      }))
+      .filter(st => st.title.length > 0);
+
+    if (!selectedSubtasks.length) {
+      toast.error('Select at least one valid subtask to apply');
+      return;
+    }
+
     // Support both callback names
+    const breakdownPayload = {
+      sourceTask: {
+        title: currentTask?.title || '',
+        description: currentTask?.description || ''
+      },
+      subtasks: selectedSubtasks
+    };
+
     if (onApply) {
-      onApply(selectedSubtasks);
+      onApply(breakdownPayload);
     } else if (onBreakdown) {
-      onBreakdown(selectedSubtasks);
+      onBreakdown(breakdownPayload);
     }
   };
 
@@ -258,34 +329,38 @@ const AITaskBreakdown = ({ task, onApply, onBreakdown, onClose, isLoading }) => 
               {subtasks.map((subtask, index) => (
                 <div
                   key={index}
-                  onClick={() => toggleSubtask(index)}
                   className={`
-                    flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all
+                    flex items-center gap-3 p-3 rounded-lg transition-all
                     ${subtask.selected 
                       ? 'bg-primary-50 dark:bg-primary-900/20 border-2 border-primary-500' 
                       : 'bg-gray-50 dark:bg-gray-800 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
                     }
                   `}
                 >
-                  <div className={`
-                    w-5 h-5 rounded border-2 flex items-center justify-center
-                    ${subtask.selected 
-                      ? 'bg-primary-500 border-primary-500 text-white' 
-                      : 'border-gray-300 dark:border-gray-500'
-                    }
-                  `}>
-                    {subtask.selected && (
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
+                  <input
+                    type="checkbox"
+                    checked={subtask.selected}
+                    onChange={() => toggleSubtask(index)}
+                    className="w-4 h-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
+                  />
                   <div className="flex-1">
-                    <p className="text-gray-800 dark:text-white">{subtask.title}</p>
+                    <input
+                      type="text"
+                      value={subtask.title}
+                      onChange={(e) => updateSubtaskField(index, 'title', e.target.value)}
+                      className="w-full px-2 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                    />
                   </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    ~{subtask.estimatedTime}m
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="0"
+                      value={subtask.estimatedTime}
+                      onChange={(e) => updateSubtaskField(index, 'estimatedTime', e.target.value)}
+                      className="w-20 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">m</span>
+                  </div>
                 </div>
               ))}
             </div>

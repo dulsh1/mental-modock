@@ -13,8 +13,11 @@ import Dashboard from './pages/Dashboard';
 import MentalHealthLog from './pages/MentalHealthLog';
 import Analytics from './pages/Analytics';
 import Tasks from './pages/Tasks';
+import TimeBlockingCalendar from './pages/TimeBlockingCalendar';
 import WellnessCoach from './pages/WellnessCoach';
 import Settings from './pages/Settings';
+import GPACalculator from './pages/GPACalculator';
+import GPAAnalytics from './pages/GPAAnalytics';
 
 function App() {
   return (
@@ -43,7 +46,10 @@ function App() {
               <Route path="log" element={<MentalHealthLog />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="tasks" element={<Tasks />} />
+              <Route path="schedule" element={<TimeBlockingCalendar />} />
               <Route path="wellness" element={<WellnessCoach />} />
+              <Route path="gpa" element={<GPACalculator />} />
+              <Route path="gpa/analytics" element={<GPAAnalytics />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 

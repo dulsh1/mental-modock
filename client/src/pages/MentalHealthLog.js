@@ -29,6 +29,24 @@ const MentalHealthLog = () => {
     'Study', 'Creative', 'Nature', 'Rest', 'Gaming'
   ];
 
+  const moodLabelFromScore = (score) => {
+    if (score <= 2) return 'very_low';
+    if (score <= 4) return 'low';
+    if (score <= 6) return 'neutral';
+    if (score <= 8) return 'good';
+    return 'excellent';
+  };
+
+  const normalizeLogForUI = (log) => ({
+    ...log,
+    mood: typeof log?.mood === 'object' ? (log.mood?.score || 3) : (log?.mood || 3),
+    energy: typeof log?.energy === 'object' ? (log.energy?.score || 3) : (log?.energy || 3),
+    stress: typeof log?.stress === 'object' ? (log.stress?.score || 3) : (log?.stress || 3),
+    journalEntry: log?.journal || log?.journalEntry || '',
+    sleepHours: log?.sleep?.hours || log?.sleepHours || 7,
+    activities: log?.activities || []
+  });
+
   const fetchData = useCallback(async () => {
     try {
       const [todayRes, recentRes] = await Promise.all([
@@ -37,17 +55,17 @@ const MentalHealthLog = () => {
       ]);
       
       if (todayRes.data.data) {
-        const log = todayRes.data.data;
+        const log = normalizeLogForUI(todayRes.data.data);
         setTodayLog(log);
-        setMood(log.mood || 3);
-        setEnergy(log.energy || 3);
-        setStress(log.stress || 3);
-        setJournalEntry(log.journalEntry || '');
-        setSleepHours(log.sleepHours || 7);
-        setActivities(log.activities || []);
+        setMood(log.mood);
+        setEnergy(log.energy);
+        setStress(log.stress);
+        setJournalEntry(log.journalEntry);
+        setSleepHours(log.sleepHours);
+        setActivities(log.activities);
       }
       
-      setRecentLogs(recentRes.data.data || []);
+      setRecentLogs((recentRes.data.data || []).map(normalizeLogForUI));
     } catch (error) {
       console.error('Failed to fetch logs:', error);
       // Demo data
@@ -81,11 +99,21 @@ const MentalHealthLog = () => {
     setSaving(true);
     try {
       const logData = {
-        mood,
-        energy,
-        stress,
-        journalEntry,
-        sleepHours,
+        mood: {
+          score: mood,
+          label: moodLabelFromScore(mood)
+        },
+        energy: {
+          score: energy
+        },
+        stress: {
+          score: stress
+        },
+        journal: journalEntry,
+        sleep: {
+          hours: sleepHours,
+          quality: 'fair'
+        },
         activities,
       };
 
@@ -93,7 +121,7 @@ const MentalHealthLog = () => {
         await mentalHealthService.updateLog(todayLog._id, logData);
       } else {
         const response = await mentalHealthService.createLog(logData);
-        setTodayLog(response.data.data);
+        setTodayLog(normalizeLogForUI(response.data.data));
       }
       
       toast.success('Daily log saved successfully!');
